@@ -1,0 +1,224 @@
+#+TITLE: Design Pattern
+
+* DONE 软件架构设计七大原则
+** DONE 开闭原则
+对修改关闭，对扩展开放
+- 实现接口来实现新的功能
+** DONE 依赖倒置原则
+依赖抽象，不依赖具体
+- 高层不依赖低层
+- 抽象不依赖细节
+使用时不使用具体类，而使用接口
+** DONE 单一职责原则
+一个类里面的逻辑尽可能简单，导致它修改的原因最好不超过一个
+策略模式，工厂方法
+** DONE 接口隔离原则
+接口里的方法逻辑尽可能简单
+** DONE 迪米特原则
+最少知道原则
+中介模式
+** DONE 里氏替换原则
+子类必须能够完全替换父类
+** DONE 合成复用原则
+尽可能使用组合或者聚合而非继承的方式，实现代码复用。
+* DONE 创建型模式
+** DONE 单例模式
+保证一个类只能创建一个实例。为了做到这点，必须使所有构造函数都为私有。
+#+begin_src plantuml
+@startuml
+'https://plantuml.com/class-diagram
+
+Client -> Singleton
+Singleton <- Singleton
+
+class Singleton {
+instance : Singleton
+Singleton()
+getInstance()
+}
+
+@enduml
+#+end_src
+依据场景需求的不同，单例模式的具体实现有 5 种。比如：
+*** 饿汉模式
+  在类加载的时候就已经创建实例，线程安全。
+**** 枚举类
+比较优雅，能防止反序列化
+**** ThreadLocal 单例
+创建时使用 ThreadLocal 来修饰单例对象
+*** 懒汉模式
+**** 双重校验锁
+创建时加锁，后续不会加锁。Spring 里面会用到这个
+**** 静态内部类
+不用加锁，静态内部类在获取的时候才会加载，代码比较繁琐。
+*** 线程安全
+*** 反序列化的破坏
+*** 源码的应用
+**** Spring
+**** Runtime
+*** 优点
+- 保证内存只有一个实例，减少内存开销
+- 避免对资源的多重占用
+- 可全局访问
+*** 缺点
+- 扩展困难，违背[[开闭原则]]
+- 不利于调试
+- 难以设计，容易违背[[单一职责原则]]
+** DONE 工厂模式
+*** 简单工厂
+在创建实现了某个接口的类时，使用 new 关键字创建实例时会让接口和实现类紧密练习在一起，增加了代码的耦合性。
+通过工厂类创建实例则只需要知道接口和工厂类，降低了代码的耦合性。
+**** 优点
++ 只负责某一类的实例化，符合[[单一职责原则]]
++ 用户只调用接口，减少耦合，符合[[依赖倒置原则]]
+**** 缺点
++ 但是新增一个实现该接口的类时，需要修改工厂类，打破了[[开闭原则]]
+  可以在工厂里添加注册类的方法，从而保证开闭原则。具体有两种：
+  - 一种是使用反射获取新类
+  - 一种是在接口中添加创建类实例的方法
+#+begin_src plantuml
+@startuml
+'https://plantuml.com/class-diagram
+
+interface Product
+
+Client -> Product : uses
+Client .> Factory : request a new product
+Factory ..> Product : return a product
+
+class ConcreteProduct1 implements Product
+class ConcreteProduct2 implements Product
+
+class Factory {
++ createProduct() : Product
+}
+
+@enduml
+#+end_src
+*** 工厂方法
+是对简单工厂的改进，通过抽象化工厂类，使得用来实例化产品的类的代码转移到实现工厂类方法的子类当中去了。并且可以通过匿名类来进一步简化代码。
+#+begin_src plantuml
+interface Product
+class ConcreteProduct implements Product
+
+abstract class Factory {
+# factoryMethod() : Product
++ makeProduct() : Product
+}
+
+class ConcreteFactory extends Factory {
+# factoryMethod() : Product
+}
+
+ConcreteProduct <. ConcreteFactory : return a concrete product
+#+end_src
+*** 抽象工厂
+严格来说工厂方法就是抽象工厂的特例。抽象工厂主要是用来创建一系列相关的产品簇，而工厂方法则是创建单个产    品
+#+begin_src plantuml
+interface ProductA
+class ConcreteProductA implements ProductA
+interface ProductB
+class ConcreteProductB implements ProductB
+
+abstract class AbstractFactory {
+# createProductA() : ProductA
+# createProductB() : ProductB
+}
+
+class ConcreteFactory extends AbstractFactory {
+# createProductA() : ConcreteProductA
+# createProductB() : ConcreteProductB
+}
+
+ConcreteProductA <.... ConcreteFactory : return a concrete A
+ConcreteProductB <.... ConcreteFactory : return a concrete B
+
+#+end_src
+** DONE 构建者模式
+当需要实例化一个复杂的类，以遍得到不同的结构和不同的内部状态的对象时，我们可以使用不同的类对它们的实例化操作逻辑进行封装。这些类就是建造者。
+#+begin_src plantuml
+@startuml
+
+abstract class Builder {
++ buildPart()
+}
+
+class ConcreteBuilder extends Builder {
++ buildPart()
+}
+
+class Client
+
+class Director {
++ construct()
+}
+
+class Product
+
+Director o-> Builder
+Director <- Client
+ConcreteBuilder <-- Client
+Product <- ConcreteBuilder
+
+@enduml
+#+end_src
+** DONE 原型模式
+原型模式实际上就是一种克隆对象来创建对象的模式
+- 依赖于外部资源或硬件密集型操作进行新对象创建，此时创建耗费精力巨大。
+- 在不确定所属的具体类时需要对象实例的情况。
+*** 浅拷贝和深拷贝
+通常来说浅拷贝对应聚合关系，深拷贝对应组合关系。
+#+begin_src plantuml
+@startuml
+'https://plantuml.com/class-diagram
+
+abstract class Prototype
+class ConcretePrototype1
+class ConcretePrototype2
+class Client
+
+Prototype <- Client
+
+abstract class Prototype {
++ clone()
+}
+class ConcretePrototype1 extends Prototype {
++ clone()
+}
+class ConcretePrototype2 extends Prototype {
++ clone()
+}
+
+@enduml
+#+end_src
+** DONE 对象池模式
+对象池模式是对一组资源的创建和管理，为了解决某些特定资源被反复使用而避免多次创建资源所带来的开销。使用场景比如数据库连接池，线程池等等。
+#+begin_src plantuml
+@startuml
+'https://plantuml.com/class-diagram
+
+class Client
+class Resource
+class ResourcePool
+
+Client --> ResourcePool : ask for resources
+Client -> Resource : use
+
+class ResourcePool {
++ acquireResource() : Resource
++ releaseResource() : Resource
+}
+
+@enduml
+#+end_src
+* TODO 行为型模式
+** TODO 责任链模式
+对一个传递来的请求进行多种不同的操作，每个类下面负责一个操作。
+这些类被称为处理器。对于传递而来的请求，处理器如果需要处理，那么就会调用一次操作，否则就将请求传递给下一个处理器。
+#+begin_src plantuml
+
+#+end_src
+Java 中的责任链应用广泛，比如：
+- 事件处理器
+- 日志处理器
+- Servelet 的 Filter

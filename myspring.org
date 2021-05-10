@@ -1,0 +1,54 @@
+#+TITLE: My Spring
+
+
+* 组件扫描
+** 两个关键 Map
+都是并发安全，底层实现是基于 ConcurrentHashMap
+- 单例池
+  装着 scope 为 singleton 的实例对象
+- Bean definition map
+  Bean definition 里面有 Bean 的类和它的 scope
+** 扫描逻辑
+1. 获取扫描路径
+   这个在传入的 config 的注解上
+2. 扫描路径下所有的文件，过滤掉不需要的文件
+   这个使用 Paths Files 完美实现，返回的文件流可以大大简化后面过滤的代码
+3. 使用类加载器加载类文件，并且只保留 @Component 注解的类
+4. 根据 Bean 类上的注解创建 BeanDefinition 并添加进入 bean definition map
+5. 扫描完成之后，遍历bean definition map 寻找单例 Bean 创建并添加入单例池
+** 获取 Bean
+1. 获取对应的 BeanDefinition
+2. 判断 Scope 类型
+   + 如果 Scope 为单例，直接从单例池里返回
+   + 如果 Scope 为原型，创建 Bean 实例并返回
+** Java 类加载器
+*** 类加载顺序
+以 MyProgram.class 为例，
+1. 加载 MyProgram.class
+2. 同时加载它所有的字段的类型以及超类
+3. 执行 main 方法
+4. 如果 main 方法要调用更多的类，那么接下来就会加载这些类
+*** 类加载器的类型
+- 引导类加载器
+  + 负责系统类，从 rt.jar 包中加载
+  + 通常用 c 语言实现，没有对应的 ClassLoader 对象
+扩展和系统类都是 URLClassLoader 的实例，使用 Java 实现
+- 扩展类加载器
+  用来加载 =/jre/lib/ext 目录的标准扩展
+- 系统类加载器
+  用来加载应用类，也即 classpath 下的包
+* 依赖倒置
+** 基本思想
+Bean 里面所依赖的其他 Bean 的创建统一由容器本身来完成
+** 关键注解
+@Autowired 可以放在属性，构造器和 setter 上
+** 怎么实现
+创建实例后，寻找 @Autowired 注解的字段，构造函数或者 setter 找到它们需要的实例，调用 getBean 方法获取并注入其中。
+** TODO
+* Aware 回调
+以 BeanNameAware 接口为例，这个是为了在创建时同时能设置 beanName 属性。实现比较简单：
+在创建 Bean 时，卡在实例化完成后，判断实例对象是否为 BeanNameAware 然后调用接口方法设置 beanName ，当然原本的 Bean 必须自己实现这个接口
+* 初始化实例
+这个和 Aware 回调有点像，只不过并不涉及属性设置
+* BeanPostProcessor
+这个是在实例化后提供用户自定义的处理实例接口

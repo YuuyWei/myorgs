@@ -1,0 +1,465 @@
+#+TITLE: JUC
+
+* 基本概念
+** 并发和并行
+- 并发：强调的是次序，如果两个任务的次序有先后，那么就不是并发。否则就是并发。
+- 并行：强调的是时间，两个任务发生的时间有重叠的部分，那就是并行。
+** 进程和线程
+- 进程：一个正在运行的程序就是进程。包含栈上的信息，堆上的信息，程序代码，全局变量。
+- 线程：相比进程来说剥离了程序代码，堆，全局变量。保留栈，PC 等少量的信息。
+** 线程的状态
+线程有 6 个状态
+- NEW
+- RUNNABLE
+- BLOCKED
+- WAITING
+- TIMED_WAITING
+- TERMINATED
+** wait/sleep 的区别
+- 来自不同的类
+  =wait= => =Object=
+  =sleep= => =Thread=
+- 锁的释放
+  =wait= 会释放锁
+  =sleep= 不会释放锁
+- 使用的范围不同
+  =wait= 必须在同步代码块中使用
+  =sleep= 可以在任何地方
+** 如何创建线程
+- 继承 =Thread= 重写 =run= 方法
+- 实现 =Runnable= 或者 =Callable= 接口
+  + 创建线程时使用 lambda 函数（常用）
+  + =Callable= 的使用需要借助 =FutureTask=
+    #+begin_src java
+public class CallableDemo {
+    public static void main(String[] args) throws ExecutionException, InterruptedException {
+//        FutureTask futureTask = new FutureTask(new MyThread());
+        FutureTask futureTask = new FutureTask(() -> {
+            System.out.println(Thread.currentThread().getName() + "****Coming here");
+            TimeUnit.SECONDS.sleep(4);
+            return 1024;
+        });
+
+        // 会缓存结果，不会计算两次
+        new Thread(futureTask, "A").start();
+        new Thread(futureTask, "B").start();
+
+        // 在此会阻塞
+        System.out.println(futureTask.get());
+        System.out.println(Thread.currentThread().getName() + "****Computed");
+    }
+}
+
+    #+end_src
+** Happen-before
+*** 什么是 happen-before
+The results of a write by one thread are guaranteed to be visible to a read by another thread only if the write operation happens-before the read operation.
+定义写操作结果对其他线程的读操作的可见性
+*** 基本规则
+ The synchronized and volatile constructs, as well as the Thread.start() and Thread.join() methods, can form happens-before relationships. In particular:
+- Each action in a thread happens-before every action in that thread that comes later in the program's order.
+- An unlock (synchronized block or method exit) of a monitor happens-before every subsequent lock (synchronized block or method entry) of that same monitor. And because the happens-before relation is transitive, all actions of a thread prior to unlocking happen-before all actions subsequent to any thread locking that monitor.
+- A write to a volatile field happens-before every subsequent read of that same field. Writes and reads of volatile fields have similar memory consistency effects as entering and exiting monitors, but do not entail mutual exclusion locking.
+- A call to start on a thread happens-before any action in the started thread.
+- All actions in a thread happen-before any other thread successfully returns from a join on that thread.
+| 规则       | 描述                               |
+|------------+------------------------------------|
+| 线程内指令 | 线程内指令之前的结果对之后可见     |
+| 解锁->加锁 | 解锁时的操作对同一锁的后续操作     |
+| volatile   | 对 volatile 字段的写操作和后续的读 |
+| 线程调用   | 线程调用对被调用线程中的操作       |
+| join       | 线程 join 后对那个 join 的线程     |
+
+*** JUC 里面定义的规则
+The methods of all classes in java.util.concurrent and its subpackages extend these guarantees to higher-level synchronization. In particular:
+- Actions in a thread prior to placing an object into any concurrent collection happen-before actions subsequent to the access or removal of that element from the collection in another thread.
+- Actions in a thread prior to the submission of a Runnable to an Executor happen-before its execution begins. Similarly for Callables submitted to an ExecutorService.
+- Actions taken by the asynchronous computation represented by a Future happen-before actions subsequent to the retrieval of the result via Future.get() in another thread.
+- Actions prior to "releasing" synchronizer methods such as Lock.unlock, Semaphore.release, and CountDownLatch.countDown happen-before actions subsequent to a successful "acquiring" method such as Lock.lock, Semaphore.acquire, Condition.await, and CountDownLatch.await on the same synchronizer object in another thread.
+- For each pair of threads that successfully exchange objects via an Exchanger, actions prior to the exchange() in each thread happen-before those subsequent to the corresponding exchange() in another thread.
+- Actions prior to calling CyclicBarrier.await and Phaser.awaitAdvance (as well as its variants) happen-before actions performed by the barrier action, and actions performed by the barrier action happen-before actions subsequent to a successful return from the corresponding await in other threads.
+| 规则       | 描述                               |
+|------------+------------------------------------|
+| 并发集合   | 并发集合添加元素对后续读取或者删除 |
+| Submmition | TODO                               |
+| releasing  | TODO                               |
+| Exchanger  | TODO                               |
+| AQS        | 前一个线程结束对后一线程的开始     |
+
+* 实现卖票
+** 传统 Synchronized
+- 在需要加锁的方法、代码块或者对象前面加上 =sychronized= 。
+  #+begin_src java
+class Ticket {
+    private int rest = 100;
+
+    public synchronized void sell() {
+        if (number > 0) {
+            System.out.println(Thread.currentThread().getName() + "卖出了" +
+            rest-- + "张票，剩余" + rest);
+        }
+    }
+}
+  #+end_src
+** Lock 接口
+使用 lock() unlock() 来加锁和解锁
+#+begin_src java
+class Ticket {
+
+    private int rest = 100;
+    private Lock lock = new ReentrantLock();
+
+    public void sell() {
+        lock.lock();
+        try{
+            if (rest > 0) {
+                System.out.println(Thread.currentThread().getName() + "卖出了第" +
+                        rest-- + "张票，剩余" + rest);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            lock.unlock();
+        }
+    }
+}
+#+end_src
+* 实现等待和通知
+** 三步走
+1. 判断：必须使用 while, 防止多线程交互中线程虚假唤醒
+2. 干活：操作资源代码
+3. 通知：通知其他线程
+** synchronized wait notifyAll
+- 锁的粒度过大
+- 三步走
+  1. 判断：必须使用 while, 防止多线程交互中线程虚假唤醒
+     =this.wait= 释放锁并等待通知唤醒
+  2. 干活：操作资源代码
+  3. 通知：通知其他线程
+     =notifyAll= 通知所有其他线程
+#+begin_src java
+class SharingData {
+    private int state = 0;
+
+    public synchronized void increment() throws InterruptedException {
+        // 判断，必须用while，防止交互中多线程虚假唤醒
+        while (state != 0) {
+            this.wait();
+        }
+
+        // 干活
+        state++;
+        System.out.println(Thread.currentThread().getName() + "\t" + state);
+
+        // 通知
+        this.notifyAll();
+    }
+
+    public synchronized void decrement() throws InterruptedException {
+        // 判断，必须用while
+        while (state == 0) {
+            this.wait();
+        }
+
+        // 干活
+        state--;
+        System.out.println(Thread.currentThread().getName() + "\t" + state);
+
+        // 通知
+        this.notifyAll();
+    }
+}
+
+#+end_src
+** Lock Condition
+- 精确控制锁的粒度
+- 三步走
+  1. 判断：必须使用 while, 防止多线程交互中线程虚假唤醒
+     =condition.await= 释放锁并等待通知唤醒
+  2. 干活：操作资源代码
+  3. 通知：通知其他线程
+     =condition.signalAll= 通知所有其他线程
+#+begin_src java
+class SharingData {
+    private int state = 0;
+    private Lock lock = new ReentrantLock();
+    private Condition condition = lock.newCondition();
+
+    public void increment() throws InterruptedException {
+        lock.lock();
+        try {
+            // 判断，必须用while
+            while (state != 0) {
+                condition.await();
+            }
+
+            // 干活
+            state++;
+            System.out.println(Thread.currentThread().getName() + "\t" + state);
+
+            // 通知
+            condition.signalAll();
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public void decrement() throws InterruptedException {
+
+        lock.lock();
+        try {
+            // 判断，必须用while
+            while (state == 0) {
+                condition.await();
+            }
+
+            // 干活
+            state--;
+            System.out.println(Thread.currentThread().getName() + "\t" + state);
+
+            // 通知
+            condition.signalAll();
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            lock.unlock();
+        }
+
+    }
+}
+
+#+end_src
+** Lock and Multiple Conditions
+- 通过使用多个 Condition 实现精确控制通知
+- 依然是[[三步走][三步曲]]
+  #+begin_src java
+    private Lock lock = new ReentrantLock();
+    private Condition conditionA = lock.newCondition();
+    private Condition conditionB = lock.newCondition();
+    private Condition conditionC = lock.newCondition();
+
+    // A:1  B:2 C:3
+    private int state = 1;
+
+    public void printA() {
+        lock.lock();
+
+        try {
+            // 判断
+            while(state != 1) {
+                conditionA.await();
+            }
+
+            // 干活
+            for (int i = 0; i < 5; i++) {
+                System.out.println(Thread.currentThread().getName() + "\t" + i);
+            }
+
+            // 通知
+            state = 2;
+            conditionB.signal();
+
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            lock.unlock();
+        }
+
+    }
+
+  #+end_src
+* 线程 8 锁
+ 线程 A 先启动，2秒后线程 B 启动。先显示花还是人?
+ 1. 标准访问：花
+ 2. 花暂停 4 秒：花 （后续都暂停 4 秒）
+ 3. 增加一个普通方法 welcome: 先显示 hello
+ 4. 两个 Screen 对象：人
+ 5. 两个静态同步方法，两个 Screen 对象：花
+ 6. 两个静态同步方法，一个 Screen 对象：花
+ 7. 一个普通同步方法，一个静态同步方法，两个 Screen 对象：人
+ 8. 一个普通同步方法，一个静态同步方法，一个 Screen 对象：人
+
+ 线程八锁的本质是判断锁住的对象是什么。
+ 对一个普通方法而言，锁住的对象是当前实例对象。
+ 而对于静态方法而言，锁住的对象是 class 对象。
+* 集合的线程安全和性能
+** ArrayList
+- Vector 对所有方法加锁，降低读取性能
+- Collections.synchronizedList 对所有方法加锁，底层是一个 synchronized 实现的
+  SynchronizedCollection 类
+- CopyOnWriteArrayList
+  只对写入方法加锁，写入时通过复制原来的数组到新的数组，对新数组写入
+  读取没有加锁，并且读取的是原来的复制之前的数组。写入完成后才会读取新数组。
+
+** Set
+Set 与 ArrayList 大差不差
+- Collections.synchronizedSet 对所有方法加锁，底层是一个 synchronized 实现的
+  SynchronizedCollection 类
+- CopyOnWriteArraySet 只对写入方法加锁，不限制读取性能
+提一嘴 HashSet 的底层实现，HashSet 的底层实现是 HashMap ，通过将 Map 的 Value
+赋一个静态常量 PRESENT 来使得 put 方法达到与 add 的一致性
+** Map
+和前两个差不了多少，只不过 JUC 提供的并发集合变成了 ConcurrentHashMap
+* JUC 常用工具类
+** CountDownPatch
+下课离开教室，班长负责关门。
+关门的前提是其他人都走出教室。
+班长是主线程，其他人代表其他线程。
+#+begin_src java
+public static void main(String[] args) throws InterruptedException {
+    int N = 6;
+    CountDownLatch countDownLatch = new CountDownLatch(N);
+
+    for (int i = 0; i < N; i++) {
+        new Thread(() -> {
+                System.out.println(Thread.currentThread().getName() + "离开教室");
+                countDownLatch.countDown();
+        }, String.valueOf(i)).start();
+    }
+
+    countDownLatch.await();
+    System.out.println("班长关门走人");
+}
+#+end_src
+** CyclicBarrier
+开会的例子。
+主管召集一群人开会，要等所有人到齐了才会开会。
+#+begin_src java
+public class CyclicBarrierDemo {
+    public static void main(String[] args) {
+        int N = 7;
+        CyclicBarrier cyclicBarrier= new CyclicBarrier(N, () -> {
+            System.out.println("开始开会");
+        });
+
+        for (int i = 0; i < N; i++) {
+            final int finalI = i;
+            new Thread(() -> {
+                System.out.println("第" + finalI + "人已到场");
+                try {
+                    cyclicBarrier.await();
+                } catch (BrokenBarrierException e) {
+                    e.printStackTrace();
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }, String.valueOf(i)).start();
+        }
+
+    }
+}
+
+#+end_src
+** Semaphore
+抢车位。
+5 辆车抢 3 个车位。
+#+begin_src java
+    public static void main(String[] args) {
+        Semaphore semaphore = new Semaphore(3);
+
+        for (int i = 0; i < 15; i++) {
+            new Thread(() -> {
+                try {
+                    semaphore.acquire();
+                    System.out.println("第" + Thread.currentThread().getName() + "辆车抢到车位");
+                    TimeUnit.SECONDS.sleep(3);
+                    System.out.println("第" + Thread.currentThread().getName() + "辆车开车走了");
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                } finally {
+                    semaphore.release();
+                }
+            }, String.valueOf(i)).start();
+        }
+
+    }
+
+#+end_src
+** ReadWriteLock
+读写锁是由两个锁组合而来，使得资源的写入具有排他性而多线程读取性能不受影响：
+1. read lock 加在只读操作上时，只要没有写入线程，只读操作可以由多个线程同时进行。
+2. write lock 加在写入操作上，具有排他性。
+   #+begin_src java
+class MyCache {
+    private volatile Map<String, Object> map = new HashMap<>();
+    private ReadWriteLock readWriteLock = new ReentrantReadWriteLock();
+
+    public void put(String string, Object object) throws InterruptedException {
+        readWriteLock.writeLock().lock();
+        try {
+            System.out.println("====正在写入" + string);
+            TimeUnit.SECONDS.sleep(3);
+            map.put(string, object);
+            System.out.println("====写入成功");
+        } finally {
+            readWriteLock.writeLock().unlock();
+        }
+
+    }
+
+    public void get(String string) throws InterruptedException {
+        readWriteLock.readLock().lock();
+        try {
+            System.out.println("====正在读取");
+            TimeUnit.SECONDS.sleep(3);
+            Object res = map.get(string);
+            System.out.println("====读取成功" + res);
+        } finally {
+            readWriteLock.readLock().unlock();
+        }
+    }
+}
+   #+end_src
+** BlockingQueue
+*** 继承接口和内部方法
+BlockingQueue <- Queue <- Collection
+|         | Throws excepption | Special value | Blocks | Times Out and Special Value |
+|---------+-------------------+---------------+--------+-----------------------------|
+| Insert  | add(e)            | offer(e)      | put(e) | offer(e, time, unit)        |
+| Remove  | remove()          | poll()        | take() | poll(time, unit)            |
+| Examine | element()         | peek()        |        |                             |
+*** 实现类
+| 类型                | 描述                                                         |
+|---------------------+--------------------------------------------------------------|
+| ArrayBlockingQueue  | 底层数组实现，固定大小                                       |
+| LinkedBlockingQueue | 底层链表实现，无限大小                                       |
+| SynchronousQueue    | 无容量，仅表示有一个进就必定有一个出，否则就阻塞，或者反过来 |
+** ThreadPool
+*** 为什么要用线程池？
+便于管理线程，同时避免重复创建所带来的开销。
+
+*** 如何创建线程池？
+ThreadPoolExecutor -> ExecutorService -> Executor
+
+*** 有一个工具类 Executors 里面有 3 种创建线程池的静态方法。
+可惜实际工作中一个都用不了，
+| 线程池种类           | 描述       | 缺陷                     |
+|----------------------+------------+--------------------------|
+| FixedThreadPool(5)   | 固定数量   | 阻塞队列无限大           |
+| CachedThreadPool     | 数量可调整 | 没有限制线程池的最大大小 |
+| SingleThreadExecutor | 单一线程池 | 阻塞队列无限大           |
+
+#+begin_src java
+ExecutorService threadPool = Executors.newFixedThreadPool(5); // 固定数量
+ExecutorService threadPool = Executors.newCachedThreadPool(); // 数量可调整
+ExecutorService threadPool = Executors.newSingleThreadExecutor(); // 单一线程池
+#+end_src
+*** 线程池的 7 个创建参数
+| 类型                     | 变量名          | 描述                              |
+|--------------------------+-----------------+-----------------------------------|
+| int                      | corePoolSize    | 核心池大小，是线程池的主力        |
+| int                      | maximumPoolSize | 最大池大小，是线程池临时工和主力  |
+| long                     | keepAliveTime   | 缩小线程池大小的等待时间          |
+| TimeUnit                 | unit            | 单位                              |
+| BlockingQueue<Runnable>  | workQueue       | 是等待队列                        |
+| ThreadFactory            | threadFactory   | 创建线程的工厂，一般用默认的就行  |
+| RejectedExecutionHandler | handler         | 线程的拒绝策略，总共有 4 个内置的 |
+*** 拒绝策略
+| 拒绝策略              | 当线程池和队列都满时                |
+|-----------------------+-------------------------------------|
+| AbortPolicy()         | 抛出异常 RejectedExecutionException |
+| DiscardOldestPolicy() | 丢弃最长时间不用的任务              |
+| CallerRunsPolicy()    | 交给调用方处理                      |
+| DiscardPolicy()       | 直接丢弃传递过来的任务              |

@@ -1,0 +1,154 @@
+#+TITLE: Spring In Action
+
+* TODO Preface
+
+* DONE Spring Basis
+** DONE Create a Home Controller and Use Thymeleaf
+Spring MVC is a powerful web framework of which the core concept is controller.
+Now we write a simple controller to handle the root path request (e.g /).
+#+begin_src java
+
+// It is not recommended to use @RestController
+@Controller
+public class HomeController {
+
+    @GetMapping("/")
+    public String home() {
+        return "home";
+    }
+
+}
+#+end_src
+
+The method home in HomeController return a string =home= which consists the name of the
+template.
+#+begin_src html
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml"
+      xmlns:th="http://www.thymeleaf.org">
+    <head>
+        <title>Taco Cloud</title>
+    </head>
+
+    <body>
+        <h1>Welcome to...</h1>
+        <img th:src="@{/images/TacoCloud.png}"/>
+    </body>
+</html>
+#+end_src
+
+As is mentioned in [[https://dzone.com/articles/introduction-to-thymeleaf-in-spring-boot][Getting Started With Thymeleaf In Spring Boot]],
+#+begin_quote
+It is not recommended to use =@RestController= in this scenario as it contains =@ResponseBody= which binds method return value to response body. Hence its responses are interpreted differently than =@Controller=.
+#+end_quote
+
+** DONE Test HomeController
+Now we've got to write a test for HomeController.
+#+begin_src java
+// @RunWith is replaced with @ExtendWith
+@ExtendWith(SpringExtension.class)
+@WebMvcTest(HomeController.class)
+class HomeControllerTest {
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @Test
+    public void testHomePage() throws Exception {
+        mockMvc.perform(get("/"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("home"))
+                .andExpect(MockMvcResultMatchers.content().string(containsString("Welcome to...")));
+    }
+}
+#+end_src
+Note that =@RunWith= has been replaced with =@ExtendWith= and =MockMvcResultMatchers= must
+be used.
+
+** DONE Spring Devtools
+It provides some useful functions when we are developing including:
+- auto restart when codes changed
+- auto reflesh browser
+Besides, we need to add a browser extension called [[https://chrome.google.com/webstore/detail/livereload/jnihajbhpnppcggbcgedagnkighmdlei][LiveReload]] to help us.
+* DONE Develop a Web Application
+** DONE Show Information
+- Build fields
+  There is a library called =lombok= provides a lot convenience.
+- Create Controllers
+  The main job Controllers do is handle HTTP requests.
+- Design Views
+  We use Thymeleaf to define our views. If you want disable template cache
+  you can add below to =application.yml=.
+  #+begin_src yml
+spring: thymeleaf: cache: false
+  #+end_src
+** DONE Handle Form Submitting
+- We use =@PostMapping= to handle form submitting.
+- =redirect:/path= redirect requests to =/path=.
+** DONE Verify Form Information
+What if users don't give the name or write their address? How to avoid this?
+Add this below to the dependencies in your =build.gradle= which will enable the
+Java's Bean Validation API.
+#+begin_src
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+#+end_src
+Then you only have to
+- declare rules in DO.
+- validate inputs when formers are being binded.
+- show errors by revising templates.
+** DONE Use View Controller
+For simple Controllers like HomeController, we have an alternative way to handle
+requests by using ViewController.
+** TODO Test Controllers
+* DONE Deal with Data
+** DONE Use Spring JBDC
+*** DONE Fit fields into persistence
+Just add Some fields like id, createTime etc.
+*** DONE Use JdbcTemplate
+JdbcTemplate provides a lot of useful functions to simplify the interaction with DB among
+which =query= and =queryForObject= are common when to get data.
+*** DONE Define schema and preload data
+You can put your =schema.sql= and =data.sql= in spring resources and spring will
+recognizes them.
+*** DONE Insert data
+To write data into DB, you are offered two ways
+- use method =update= directly
+  To get the auto-generated key id while inserting data. We have to use a method =update=
+  accepting two arguments
+- use class =SimpleJdbcInsert=
+** DONE Use Spring Data JPA
+*** DONE Add dependencies
+- JPA is actually a interface in spring which means you need to choose a library
+  implements JPA. By default JPA use hibernate as its implementation.
+- One great things that JPA have done is making the interaction with DB more simple the only thing you do is to write interfaces and annotations.
+- You don't have to put =schema.sql= on the classpath.
+*** DONE Annotate entities
+@Entity on the classes according to the table in DB exactly.
+@Enumerated on the fields that is enum.
+@Id on primary key.
+@GeneratedValue and @Id on the auto-increase primary key.
+@Prepersist on the methods that initialize fields.
+*** DONE Declare JPA repository
+write a Repository inteface extending CrudRepository<Entity, ID>.
+*** DONE Customize JPA repository
+There are two ways to customize JPA repository
+- method signatures e.g. =List<Order> findByZipCode(String code)=.
+- @Query on methods but this is not a SQL which means to get it in hands needs
+  some efforts
+* TODO Spring Security
+** DONE Enable Spring Security
+Add this to =dependencies= in build.gradle
+#+begin_src groovy
+implementation 'org.springframework.boot:spring-boot-starter-security'
+#+end_src
+and you've got
+- All HTTP request have to be authenticated.
+- A user named =user=
+- No need for particular roles and authority.
+** DONE Configure Spring Security
+- User storage in memory
+- User storage by JDBC
+- User storage supported by LDAP
+- Customize user storage
+  Here I use JPA and UserDetailsService in spring security.
+** TODO Protect Web Request
