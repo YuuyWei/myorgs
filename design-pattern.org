@@ -39,6 +39,10 @@ getInstance()
 
 @enduml
 #+end_src
+
+#+RESULTS:
+[[file:/tmp/babel-WfzqCD/plantuml-od57pW.png]]
+
 依据场景需求的不同，单例模式的具体实现有 5 种。比如：
 *** 饿汉模式
   在类加载的时候就已经创建实例，线程安全。
@@ -95,6 +99,10 @@ class Factory {
 
 @enduml
 #+end_src
+
+#+RESULTS:
+[[file:/tmp/babel-WfzqCD/plantuml-76OeDt.png]]
+
 *** 工厂方法
 是对简单工厂的改进，通过抽象化工厂类，使得用来实例化产品的类的代码转移到实现工厂类方法的子类当中去了。并且可以通过匿名类来进一步简化代码。
 #+begin_src plantuml
