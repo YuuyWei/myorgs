@@ -1,0 +1,70 @@
+#+TITLE: Sicp Notes
+
+* The Elements of Programming
+** Exercise 1.3
+Define a procedure that takes three numbers as arguments and returns the sum of the squares of the two larger numbers.
+#+begin_src racket
+#lang scheme
+(define (sum-of-squares-larger-two x y z)
+  (define (sum-of-squares x y)
+    (define (square x)
+        (* x x))
+    (+ (square x)
+       (square y)))
+  (define (first-larger x y z)
+    (if (< x y)
+        (if (< z y) y z)
+        (if (< z x) x z)))
+  (define (second-larger x y z)
+    (if (< x y)
+        (if (< z y) z y)
+        (if (< z x) z x)))
+  (sum-of-squares (first-larger x y z) (second-larger x y z)))
+
+(sum-of-squares-larger-two 5 8 2)
+#+end_src
+
+#+RESULTS:
+: 68
+** Exercise 1.5
+Ben Bitdiddle has invented a test to determine whether the interpreter he is faced with is using applicative-order evaluation or normal-order evaluation. He defines the following two procedures:
+#+begin_src racket
+#lang scheme
+(define (p) (p))
+(define (test x y)
+  (if (= x 0)
+      0
+      y))
+(test 0 (p))
+#+end_src
+An interpreter using applicative-order evaluation will facing endless loop, while an interpreter using normal-order will return 0. What I am using is a scheme with applicative-order.
+** Example: Square Roots by Newton's Method
+#+begin_src racket
+#lang scheme
+
+(define (square x)
+  (* x x))
+
+(define (average x y)
+  (/ (+ x y) 2))
+
+(define (good-enough? guess x)
+  (< (abs (- (square guess) x)) 0.001))
+
+(define (improve guess x)
+  (average guess (/ x guess)))
+
+(define (sqrt-iter guess x)
+  (if (good-enough? guess x)
+      guess
+      (sqrt-iter (improve guess x)
+                 x)))
+
+(define (sqrt x)
+  (sqrt-iter 1.0 x))
+
+(sqrt 2)
+#+end_src
+
+#+RESULTS:
+: 1.4142156862745097
